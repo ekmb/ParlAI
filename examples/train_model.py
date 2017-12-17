@@ -30,6 +30,7 @@ from parlai.core.utils import Timer
 from parlai.core.metrics import compute_time_metrics
 import build_dict
 import math
+from multiprocessing import set_start_method
 
 def setup_args():
     parser = ParlaiParser(True, True)
@@ -123,6 +124,11 @@ class TrainLoop():
             build_dict.build_dict(opt)
         # Create model and assign it to the specified task
         self.agent = create_agent(opt)
+        
+        # CUDA with multiprocessing requires 'spawn' start method
+        if opt.get('numthreads', 1) > 1 and opt.get('cuda', False):
+            set_start_method('spawn')
+
         self.world = create_task(opt, self.agent)
         self.train_time = Timer()
         self.validate_time = Timer()
