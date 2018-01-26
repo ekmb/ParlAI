@@ -45,7 +45,7 @@ def _path(task, opt):
             '{task}_{type}.txt'.format(task=task_name, type=suffix))
 
     cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
-    return datafile, cands_datafile
+    return datafile, None
 
 
 # The knowledge base of facts that can be used to answer questions.
@@ -157,6 +157,7 @@ class TaskTeacher(FbDialogTeacher):
                         split[2] = reward
                     else:
                         split.append(reward)
+                    split.append(cands)
                     if start:
                         yield split, True
                         start = False
