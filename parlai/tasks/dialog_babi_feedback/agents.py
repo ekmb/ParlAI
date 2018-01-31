@@ -20,9 +20,9 @@ import os
 
 tasks = {}
 tasks[1] = 'rl1_API_calls_with_ans'
-tasks[2] = 'rl2_API-refine_with_ans'
+tasks[2] = 'rl2_API_refine_with_ans'
 tasks[3] = 'rl3_options_with_ans'
-tasks[4] = 'rl4_phone-address_with_ans'
+tasks[4] = 'rl4_phone_address_with_ans'
 tasks[5] = 'rl5_full_dialogs_with_ans'
 
 def _path(task, opt):
@@ -44,7 +44,9 @@ def _path(task, opt):
     datafile = os.path.join(prefix,
             '{task}_{type}.txt'.format(task=task_name, type=suffix))
 
-    cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
+    if dt == 'test':
+        cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
+        return datafile, cands_datafile
     return datafile, None
 
 
