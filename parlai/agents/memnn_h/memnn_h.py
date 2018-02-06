@@ -20,7 +20,7 @@ import random
 from .modules import MemNN, Decoder
 
 
-class MemnnAgent(Agent):
+class MemnnHAgent(Agent):
     """ Memory Network agent.
     """
 
@@ -68,12 +68,32 @@ class MemnnAgent(Agent):
             torch.cuda.device(opt['gpu'])
 
         if not shared:
-            self.opt = opt
             self.id = 'MemNN'
             self.dict = DictionaryAgent(opt)
             self.answers = [None] * opt['batchsize']
 
             self.model = MemNN(opt, len(self.dict))
+            
+            if opt['cuda']:
+                self.model.share_memory()
+                if self.decoder is not None:
+                    self.decoder.cuda()
+
+            if opt.get('model_file') and os.path.isfile(opt['model_file']):
+                print('Loading existing model parameters from ' + opt['model_file'])
+                self.load(opt['model_file'])
+        elif 'model' in shared:       
+            self.answers = [None] * opt['batchsize']
+            # model is shared during hogwild
+            self.model = shared['model']
+            self.dict = shared['dict']
+            self.decoder = shared['decoder']
+        
+        else:
+            self.answers = shared['answers']
+
+        if hasattr(self, 'model'):
+            self.opt = opt
             self.mem_size = opt['mem_size']
             self.loss_fn = CrossEntropyLoss()
 
@@ -102,17 +122,6 @@ class MemnnAgent(Agent):
             else:
                 raise NotImplementedError('Optimizer not supported.')
 
-            if opt['cuda']:
-                self.model.share_memory()
-                if self.decoder is not None:
-                    self.decoder.cuda()
-
-            if opt.get('model_file') and os.path.isfile(opt['model_file']):
-                print('Loading existing model parameters from ' + opt['model_file'])
-                self.load(opt['model_file'])
-        else:       
-            self.answers = shared['answers']
-
         self.history = {}
         self.episode_done = True
         self.last_cands, self.last_cands_list = None, None
@@ -121,12 +130,15 @@ class MemnnAgent(Agent):
     def share(self):
         shared = super().share()
         shared['answers'] = self.answers
+        if self.opt.get('numthreads', 1) > 1:
+            shared['model'] = self.model
+            self.model.share_memory()
+            shared['dict'] = self.dict
+            shared['decoder'] = self.decoder
         return shared
 
     def observe(self, observation):
-        print ('observe:', os.getpid(), id(self), self.opt.get('batchindex', 0))
-        # print ('BEFORE', self.history)
-        # print (self.answers, self.opt.get('batchindex', 0))
+        print ('observe:', os.getpid(), id(self))
         """Save observation for act.
         If multiple observations are from the same episode, concatenate them.
         """
@@ -144,12 +156,11 @@ class MemnnAgent(Agent):
         
         self.observation = obs
         self.answers[batch_idx] = None
-        # print ('AFTER:', self.history)
         return obs
 
     def predict(self, xs, cands, ys=None):
-        # print ('predict', os.getpid(), id(self))
-        is_training = ys is not None
+        print('predict:', os.getpid(), id(self))
+        is_training = ys is not None 
         if is_training:
             # Subsample to reduce training time
             cands = [list(set(random.sample(c, min(32, len(c))) + self.labels))
@@ -286,7 +297,7 @@ class MemnnAgent(Agent):
             cands = list of candidates for each example in batch
             valid_inds = list of indices for examples with valid observations
         """
-        print ('in batchify:', obs, '\n')
+        print('\n', obs)
         exs = [ex for ex in obs if 'text' in ex]
         valid_inds = [i for i, ex in enumerate(obs) if 'text' in ex]
         if not exs:
