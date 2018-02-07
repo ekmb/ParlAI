@@ -348,6 +348,18 @@ class MTurkManager():
                 'Agent ({}) with no assign_id called alive'.format(worker_id)
             )
         elif assign_id not in curr_worker_state.agents:
+            # Ensure that this connection isn't violating our uniqueness
+            # constraints
+            if self.is_unique:
+                for agent in curr_worker_state.agents.values():
+                    if agent.state.status == AssignState.STATUS_DONE:
+                        text = (
+                            'You have already participated in this HIT the '
+                            'maximum number of times. This HIT is now expired.'
+                            ' Please return the HIT.'
+                        )
+                        self.force_expire_hit(worker_id, assign_id, text)
+                        return
             # First time this worker has connected under this assignment, init
             # new agent if we are still accepting workers
             if self.accepting_workers:
@@ -633,7 +645,6 @@ class MTurkManager():
             'type': 'reward',
             'num_total_assignments': num_assignments,
             'reward': self.opt['reward'],  # in dollars
-            'unique': self.opt['unique_worker']
         }
         total_cost = mturk_utils.calculate_mturk_cost(payment_opt=payment_opt)
         if not mturk_utils.check_mturk_balance(
@@ -667,9 +678,11 @@ class MTurkManager():
 
         shared_utils.print_and_log(logging.INFO, 'Setting up MTurk server...',
                                    should_print=True)
+        self.is_unique = self.opt['unique_worker'] or \
+            (self.opt['unique_qual_name'] is not None)
         mturk_utils.create_hit_config(
             task_description=self.opt['task_description'],
-            unique_worker=self.opt['unique_worker'],
+            unique_worker=self.is_unique,
             is_sandbox=self.opt['is_sandbox']
         )
         # Poplulate files to copy over to the server
@@ -855,6 +868,9 @@ class MTurkManager():
         finally:
             server_utils.delete_server(self.server_task_name)
             mturk_utils.delete_sns_topic(self.topic_arn)
+            if self.opt['unique_worker']:
+                mturk_utils.delete_qualification(self.unique_qual_id,
+                                                 self.is_sandbox)
             self._save_disconnects()
 
     # MTurk Agent Interaction Functions #
@@ -897,6 +913,7 @@ class MTurkManager():
         """Send a message through the socket manager,
         update conversation state
         """
+        data = data.copy()  # Ensure data packet is sent in current state
         data['type'] = data_model.MESSAGE_TYPE_MESSAGE
         # Force messages to have a unique ID
         if 'message_id' not in data:
@@ -924,6 +941,7 @@ class MTurkManager():
         if agent is not None:
             agent.state.messages.append(packet.data)
         self.socket_manager.queue_packet(packet)
+        return data['message_id']
 
     def send_command(self, receiver_id, assignment_id, data, blocking=True,
                      ack_func=None):
@@ -955,6 +973,11 @@ class MTurkManager():
     def mark_workers_done(self, workers):
         """Mark a group of workers as done to keep state consistent"""
         for worker in workers:
+            if self.is_unique:
+                self.give_worker_qualification(
+                    worker.worker_id,
+                    self.unique_qual_name,
+                )
             if not worker.state.is_final():
                 worker.state.status = AssignState.STATUS_DONE
 
@@ -993,7 +1016,8 @@ class MTurkManager():
                 self.opt['block_qualification'],
                 'A soft ban from using a ParlAI-created HIT due to frequent '
                 'disconnects from conversations, leading to negative '
-                'experiences for other Turkers and for the requester.'
+                'experiences for other Turkers and for the requester.',
+                self.is_sandbox,
             )
             assert block_qual_id is not None, (
                 'Hits could not be created as block qualification could not be'
@@ -1001,6 +1025,21 @@ class MTurkManager():
             )
             qualifications.append({
                 'QualificationTypeId': block_qual_id,
+                'Comparator': 'DoesNotExist',
+                'RequiredToPreview': True
+            })
+
+        if self.is_unique:
+            self.unique_qual_name = self.opt.get('unique_qual_name')
+            if self.unique_qual_name is None:
+                self.unique_qual_name = self.task_group_id + '_max_submissions'
+            self.unique_qual_id = mturk_utils.find_or_create_qualification(
+                self.unique_qual_name,
+                'Prevents workers from completing a task too frequently',
+                self.is_sandbox,
+            )
+            qualifications.append({
+                'QualificationTypeId': self.unique_qual_id,
                 'Comparator': 'DoesNotExist',
                 'RequiredToPreview': True
             })
@@ -1030,27 +1069,14 @@ class MTurkManager():
             self.topic_arn
         )
 
-        if self.opt['unique_worker'] is True:
-            # Use a single hit with many assignments to allow
-            # workers to only work on the task once
+        for _i in range(num_hits):
             mturk_page_url, hit_id = mturk_utils.create_hit_with_hit_type(
                 page_url=mturk_chat_url,
                 hit_type_id=hit_type_id,
-                num_assignments=num_hits,
+                num_assignments=1,
                 is_sandbox=self.is_sandbox
             )
             self.hit_id_list.append(hit_id)
-        else:
-            # Create unique hits, allowing one worker to be able to handle many
-            # tasks without needing to be unique
-            for _i in range(num_hits):
-                mturk_page_url, hit_id = mturk_utils.create_hit_with_hit_type(
-                    page_url=mturk_chat_url,
-                    hit_type_id=hit_type_id,
-                    num_assignments=1,
-                    is_sandbox=self.is_sandbox
-                )
-                self.hit_id_list.append(hit_id)
         return mturk_page_url
 
     def create_hits(self, qualifications=None):
@@ -1117,11 +1143,12 @@ class MTurkManager():
         """Soft block a worker by giving the worker the block qualification"""
         qual_name = self.opt['block_qualification']
         assert qual_name != '', ('No block qualification has been specified')
-        self.give_worker_qualification(worker_id, qual_name)
+        self.give_worker_qualification(worker_id, qual_name,
+                                       is_sandbox=self.is_sandbox)
 
     def give_worker_qualification(self, worker_id, qual_name, qual_value=None):
         """Give a worker a particular qualification"""
-        qual_id = mturk_utils.find_qualification(qual_name)
+        qual_id = mturk_utils.find_qualification(qual_name, self.is_sandbox)
         if qual_id is False or qual_id is None:
             shared_utils.print_and_log(
                 logging.WARN,
@@ -1131,7 +1158,13 @@ class MTurkManager():
                 should_print=True
             )
             return
-        mturk_utils.give_worker_qualification(worker_id, qual_id, qual_value)
+        mturk_utils.give_worker_qualification(worker_id, qual_id, qual_value,
+                                              self.is_sandbox)
+        shared_utils.print_and_log(
+            logging.INFO,
+            'gave {} qualification {}'.format(worker_id, qual_name),
+            should_print=True
+        )
 
     def create_qualification(self, qualification_name, description,
                              can_exist=True):
@@ -1139,7 +1172,8 @@ class MTurkManager():
         the ID of the existing qualification rather than throw an error
         """
         if not can_exist:
-            qual_id = mturk_utils.find_qualification(qualification_name)
+            qual_id = mturk_utils.find_qualification(qualification_name,
+                                                     self.is_sandbox)
             if qual_id is not None:
                 shared_utils.print_and_log(
                     logging.WARN,
@@ -1150,7 +1184,8 @@ class MTurkManager():
                 return None
         return mturk_utils.find_or_create_qualification(
             qualification_name,
-            description
+            description,
+            self.is_sandbox
         )
 
     def pay_bonus(self, worker_id, bonus_amount, assignment_id, reason,
