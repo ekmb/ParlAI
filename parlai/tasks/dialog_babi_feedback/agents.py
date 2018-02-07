@@ -41,6 +41,8 @@ def _path(task, opt):
         suffix = 'tst'
     elif dt == 'valid':
         suffix = 'dev'
+    elif dt == 'test_small':
+        suffix = 'tst_small'
     datafile = os.path.join(prefix,
             '{task}_{type}.txt'.format(task=task_name, type=suffix))
 
