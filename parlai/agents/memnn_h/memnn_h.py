@@ -61,7 +61,10 @@ class MemnnHAgent(Agent):
 
     def __init__(self, opt, shared=None):
         import os
-        print (os.getpid(), id(self))
+        
+        print ('-'*30)
+        print ('in init', os.getpid(), id(self))
+        
         opt['cuda'] = not opt['no_cuda'] and torch.cuda.is_available()
         if opt['cuda']:
             print('[ Using CUDA ]')
@@ -82,15 +85,15 @@ class MemnnHAgent(Agent):
             if opt.get('model_file') and os.path.isfile(opt['model_file']):
                 print('Loading existing model parameters from ' + opt['model_file'])
                 self.load(opt['model_file'])
-        elif 'model' in shared:       
-            self.answers = [None] * opt['batchsize']
-            # model is shared during hogwild
-            self.model = shared['model']
-            self.dict = shared['dict']
-            self.decoder = shared['decoder']
-        
-        else:
-            self.answers = shared['answers']
+        else:      
+            if 'model' in shared and 'threadindex' in shared: 
+                # model is shared during hogwild
+                self.model = shared['model']
+                self.dict = shared['dict']
+                self.decoder = shared['decoder']
+                self.answers = [None] * opt['batchsize']
+            else: 
+                self.answers = shared['answers']
 
         if hasattr(self, 'model'):
             self.opt = opt
@@ -130,6 +133,7 @@ class MemnnHAgent(Agent):
     def share(self):
         shared = super().share()
         shared['answers'] = self.answers
+        # print ('------------>', self.opt.get('numthreads'), os.getpid(), hasattr(shared, 'threadindex'))
         if self.opt.get('numthreads', 1) > 1:
             shared['model'] = self.model
             self.model.share_memory()
@@ -138,7 +142,7 @@ class MemnnHAgent(Agent):
         return shared
 
     def observe(self, observation):
-        print ('observe:', os.getpid(), id(self))
+        # print ('observe BEFORE:', os.getpid(), id(self), self.answers, id(self.answers))
         """Save observation for act.
         If multiple observations are from the same episode, concatenate them.
         """
@@ -156,10 +160,10 @@ class MemnnHAgent(Agent):
         
         self.observation = obs
         self.answers[batch_idx] = None
+        # print ('observe AFTER:', os.getpid(), id(self), self.answers, id(self.answers))
         return obs
 
     def predict(self, xs, cands, ys=None):
-        print('predict:', os.getpid(), id(self))
         is_training = ys is not None 
         if is_training:
             # Subsample to reduce training time
@@ -196,8 +200,8 @@ class MemnnHAgent(Agent):
             loss.backward()
             for o in self.optimizers.values():
                 o.step()
-        print ('predictions:', predictions)
-        import pdb; pdb.set_trace()
+        # print ('-----> predictions:', os.getpid(), id(self), predictions)
+        # import pdb; pdb.set_trace()
         return predictions
 
     def score(self, cands, output_embeddings):
@@ -297,7 +301,7 @@ class MemnnHAgent(Agent):
             cands = list of candidates for each example in batch
             valid_inds = list of indices for examples with valid observations
         """
-        print('\n', obs)
+        print('\n', os.getpid(), obs)
         exs = [ex for ex in obs if 'text' in ex]
         valid_inds = [i for i, ex in enumerate(obs) if 'text' in ex]
         if not exs:
@@ -352,6 +356,7 @@ class MemnnHAgent(Agent):
             self.answers[valid_inds[i]] = predictions[i][0]
             batch_reply[valid_inds[i]]['text'] = predictions[i][0]
             batch_reply[valid_inds[i]]['text_candidates'] = predictions[i]
+        print('===== in batch act', os.getpid(), id(self), self.answers)
         return batch_reply
 
     def act(self):
