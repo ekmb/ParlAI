@@ -19,7 +19,7 @@ import random
 from .modules import MemNN, Decoder, to_tensors
 
 
-class MemnnExtendedAgent(Agent):
+class MemnnCombAgent(Agent):
     """ Memory Network agent.
     With setting IM acts as a regular Imitation learning agent
 

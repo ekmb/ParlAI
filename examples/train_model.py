@@ -229,9 +229,9 @@ class TrainLoop():
 
         _rep, wrld = run_eval(self.agent, opt, 'valid', write_log=True)
         wrld.shutdown()  # may need to shut down threads, remote connections
-        _rep, wrld = run_eval(self.agent, opt, 'test', write_log=True)
-        wrld.shutdown()  # may need to shut down threads, remote connections
         _rep, wrld = run_eval(self.agent, opt, 'test_small', write_log=True)
+        wrld.shutdown()  # may need to shut down threads, remote connections
+        _rep, wrld = run_eval(self.agent, opt, 'test', write_log=True)
         wrld.shutdown()  # may need to shut down threads, remote connections
 
 if __name__ == '__main__':
