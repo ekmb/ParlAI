@@ -91,6 +91,19 @@ class MemnnCombAgent(Agent):
             
             self.model = MemNN(opt, self.dict)
 
+            optim_params = [p for p in self.model.parameters() if p.requires_grad]
+            lr = opt['learning_rate']
+            if opt['optimizer'] == 'sgd':
+                self.optimizers = {'memnn': optim.SGD(optim_params, lr=lr)}
+                if self.decoder is not None:
+                    self.optimizers['decoder'] = optim.SGD(self.decoder.parameters(), lr=lr)
+            elif opt['optimizer'] == 'adam':
+                self.optimizers = {'memnn': optim.Adam(optim_params, lr=lr)}
+                if self.decoder is not None:
+                    self.optimizers['decoder'] = optim.Adam(self.decoder.parameters(), lr=lr)
+            else:
+                raise NotImplementedError('Optimizer not supported.')
+
             if opt['cuda']:
                 self.model.share_memory()
                 if self.decoder is not None:
@@ -105,6 +118,7 @@ class MemnnCombAgent(Agent):
                 self.model = shared['model']
                 self.dict = shared['dict']
                 self.decoder = shared['decoder']
+                self.optimizers = shared['optimizer']
                 if 'FP' in opt['setting']:
                     self.beta_word = shared['betaword']
 
@@ -124,19 +138,6 @@ class MemnnCombAgent(Agent):
             self.START = self.dict.start_token
             self.START_TENSOR = torch.LongTensor(self.dict.parse(self.START))
 
-            optim_params = [p for p in self.model.parameters() if p.requires_grad]
-            lr = opt['learning_rate']
-            if opt['optimizer'] == 'sgd':
-                self.optimizers = {'memnn': optim.SGD(optim_params, lr=lr)}
-                if self.decoder is not None:
-                    self.optimizers['decoder'] = optim.SGD(self.decoder.parameters(), lr=lr)
-            elif opt['optimizer'] == 'adam':
-                self.optimizers = {'memnn': optim.Adam(optim_params, lr=lr)}
-                if self.decoder is not None:
-                    self.optimizers['decoder'] = optim.Adam(self.decoder.parameters(), lr=lr)
-            else:
-                raise NotImplementedError('Optimizer not supported.')
-
         self.reset()
         self.last_cands, self.last_cands_list = None, None
 
@@ -147,6 +148,7 @@ class MemnnCombAgent(Agent):
         if self.opt.get('numthreads', 1) > 1:
             shared['model'] = self.model
             self.model.share_memory()
+            shared['optimizer'] = self.optimizers
             shared['dict'] = self.dict
             shared['decoder'] = self.decoder
             if 'FP' in self.model_setting:
@@ -267,7 +269,7 @@ class MemnnCombAgent(Agent):
                     else:
                         feedback_label_inds = Variable(torch.LongTensor(feedback_label_inds))
                     loss_fp = self.loss_fn(fp_scores, feedback_label_inds)
-                    
+                    print ('Loss:', loss_fp.data[0])
                     if loss_fp.data[0] > 100000:
                         raise Exception("Loss might be diverging. Loss:", loss_fp.data[0])
                     self.backward(loss_fp, retain_graph = True)
