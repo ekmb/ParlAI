@@ -47,6 +47,8 @@ class MemnnCombAgent(Agent):
             help='use time features for memory embeddings')
         arg_group.add_argument('--position-encoding', type='bool', default=False,
             help='use position encoding instead of bag of words embedding')
+        arg_group.add_argument('-clip', '--gradient-clip', type=float, default=0.2,
+                           help='gradient clipping using l2 norm')
         arg_group.add_argument('--output', type=str, default='rank',
             help='type of output (rank|generate)')
         arg_group.add_argument('--rnn-layers', type=int, default=2,
@@ -126,6 +128,7 @@ class MemnnCombAgent(Agent):
             self.opt = opt
             self.mem_size = opt['mem_size']
             self.loss_fn = CrossEntropyLoss()
+            self.gradient_clip = opt.get('gradient_clip', 0.2)
             
             self.model_setting = opt['setting']
             if 'FP' in opt['setting']:
@@ -196,6 +199,8 @@ class MemnnCombAgent(Agent):
         for o in self.optimizers.values():
             o.zero_grad()
         loss.backward(retain_graph=retain_graph)
+
+        torch.nn.utils.clip_grad_norm(self.model.parameters(), self.gradient_clip)
         for o in self.optimizers.values():
             o.step()
 
@@ -269,7 +274,6 @@ class MemnnCombAgent(Agent):
                     else:
                         feedback_label_inds = Variable(torch.LongTensor(feedback_label_inds))
                     loss_fp = self.loss_fn(fp_scores, feedback_label_inds)
-                    print ('Loss:', loss_fp.data[0])
                     if loss_fp.data[0] > 100000:
                         raise Exception("Loss might be diverging. Loss:", loss_fp.data[0])
                     self.backward(loss_fp, retain_graph = True)
