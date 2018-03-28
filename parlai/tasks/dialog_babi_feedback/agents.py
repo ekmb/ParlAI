@@ -41,15 +41,11 @@ def _path(task, opt):
         suffix = 'tst'
     elif dt == 'valid':
         suffix = 'dev'
-    elif dt == 'test_small':
-        suffix = 'tst_small'
     datafile = os.path.join(prefix,
             '{task}_{type}.txt'.format(task=task_name, type=suffix))
 
-    if dt == 'test':
-        cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
-        return datafile, cands_datafile
-    return datafile, None
+    cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
+    return datafile, cands_datafile
 
 
 # The knowledge base of facts that can be used to answer questions.
