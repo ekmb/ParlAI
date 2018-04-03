@@ -124,7 +124,7 @@ class MemNN(nn.Module):
 
         # hop over candidate answers
         scores = self.get_score(cand_answers, query_embeddings)
-        probs = softmax(scores).unsqueeze(1)
+        probs = softmax(scores, dim=0).unsqueeze(1)
 
         forward_prediction_output = torch.bmm(probs, cands_embeddings_with_beta).squeeze(1)
         forward_prediction_output = forward_prediction_output + query_embeddings
@@ -201,7 +201,8 @@ class Hop(nn.Module):
         if attention_mask is not None:
             # exclude masked elements from the softmax
             attention = attention_mask.float() * attention + (1 - attention_mask.float()) * -1e20
-        probs = softmax(attention).unsqueeze(1)
+
+        probs = softmax(attention, dim=0).unsqueeze(1)
         memory_output = torch.bmm(probs, out_memory_embeddings).squeeze(1)
         query_embeddings = self.linear(query_embeddings)
         output = memory_output + query_embeddings
