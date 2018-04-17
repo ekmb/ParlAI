@@ -196,6 +196,8 @@ class TrainLoop():
     def train(self):
         opt = self.opt
         world = self.world
+        # run_eval(self.agent, opt, 'test', write_log=True)
+        # self.validate()
         with world:
             while True:
                 world.parley()
@@ -219,12 +221,14 @@ class TrainLoop():
                     print("[ saving model: " + opt['model_file'] + " ]")
                     world.save_agents()
                     self.save_time.reset()
-
+        
         if not self.saved:
             # save agent
+            print ('saving agent')
             world.save_agents()
-        elif opt.get('model_file'):
+        else:
             # reload best validation model
+            print ('-------> reloading')
             self.agent = create_agent(opt)
 
         _rep, wrld = run_eval(self.agent, opt, 'valid', write_log=True)

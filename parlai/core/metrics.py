@@ -140,7 +140,7 @@ class Metrics(object):
         for k in self.custom_metrics:
             self.metrics[k] = 0.0
             self.metrics[k + '_cnt'] = 0
-        self.eval_pr = [1, 5, 10, 100]
+        self.eval_pr = [1, 5, 10, 20, 30, 40, 50, 60, 100]
         for k in self.eval_pr:
             self.metrics['hits@' + str(k)] = 0
         if opt.get('numthreads', 1) > 1:

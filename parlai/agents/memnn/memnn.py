@@ -139,13 +139,18 @@ class MemnnAgent(Agent):
         
         self.observation = obs
         self.answers[batch_idx] = None
+        # print ('in observe')
+        # import pdb; pdb.set_trace()
         return obs
 
     def predict(self, xs, cands, ys=None):
+        # print ('in predict')
+        # import pdb; pdb.set_trace()
+
         is_training = ys is not None
         if is_training:
             # Subsample to reduce training time
-            cands = [list(set(random.sample(c, min(32, len(c))) + self.labels))
+            cands = [list(set(random.sample(c, min(100, len(c))) + self.labels))
                      for c in cands]
         else:
             # rank all cands to increase accuracy
@@ -165,6 +170,7 @@ class MemnnAgent(Agent):
                 else:
                     label_inds = Variable(torch.LongTensor(label_inds))
                 loss = self.loss_fn(scores, label_inds)
+                # print ('loss', loss.data[0])
             predictions = self.ranked_predictions(cands, scores)
         else:
             self.decoder.train(mode=is_training)
@@ -313,6 +319,9 @@ class MemnnAgent(Agent):
             self.last_cands = cands
             self.last_cands_list = [list(c) for c in cands]
         cands = self.last_cands_list
+
+        # print ('in batchify')
+        # import pdb; pdb.set_trace()
         return xs, ys, cands, valid_inds
 
     def batch_act(self, observations):

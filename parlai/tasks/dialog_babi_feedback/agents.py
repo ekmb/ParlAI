@@ -45,6 +45,8 @@ def _path(task, opt):
             '{task}_{type}.txt'.format(task=task_name, type=suffix))
 
     cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
+    if opt['setting'] == 'FP_after_RBI':
+        return datafile, None
     return datafile, cands_datafile
 
 

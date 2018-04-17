@@ -39,7 +39,7 @@ class MemnnCombAgent(Agent):
             help='learning rate')
         arg_group.add_argument('--embedding-size', type=int, default=128,
             help='size of token embeddings')
-        arg_group.add_argument('--hops', type=int, default=1,
+        arg_group.add_argument('--hops', type=int, default=3,
             help='number of memory hops')
         arg_group.add_argument('--mem-size', type=int, default=100,
             help='size of memory')
@@ -86,10 +86,10 @@ class MemnnCombAgent(Agent):
             elif opt['output'] != 'rank' and opt['output'] != 'r':
                 raise NotImplementedError('Output type not supported.')
 
-            if 'FP' in opt['setting']:
+            # if 'FP' in opt['setting']:
                 # add extra beta-word to indicate learner's answer
-                self.beta_word = 'betaword'
-                self.dict.add_to_dict([self.beta_word])
+            self.beta_word = 'betaword'
+            self.dict.add_to_dict([self.beta_word])
             
             self.model = MemNN(opt, self.dict)
 
@@ -195,6 +195,7 @@ class MemnnCombAgent(Agent):
         self.episode_done = True
 
     def backward(self, loss, retain_graph=False):
+        # import pdb; pdb.set_trace()
         # zero out optimizer and take one optimization step
         for o in self.optimizers.values():
             o.zero_grad()
@@ -236,18 +237,13 @@ class MemnnCombAgent(Agent):
 
     def predict(self, xs, answer_cands, ys=None, feedback_cands=None):
         is_training = ys is not None
-        if is_training:
-            if 'FP' in self.model_setting:
+        if is_training and 'FP' not in self.model_setting:
             # Subsample to reduce training time
-                true_labels = [self.feedback_labels[i][22:] if 'no' in self.feedback_labels[i] else self.labels[i] for i in range(len(self.labels))]
-                answer_cands = [list(set(random.sample(answer_cands[i], min(20, len(answer_cands[i]))) + [true_labels[i], self.labels[i]]))
-                     for i in range(len(answer_cands))]
-            else:
-                answer_cands = [list(set(random.sample(answer_cands[i], min(100, len(answer_cands[i]))) + [self.labels[i]]))
-                     for i in range(len(answer_cands))]
-        elif 'RBI' not in self.model_setting:
-            answer_cands = [list(set(random.sample(answer_cands[i], min(20, len(answer_cands[i]))) + [self.eval_labels[i]]))
-                     for i in range(len(answer_cands))]
+            answer_cands = [list(set(random.sample(c, min(100, len(c))) + self.labels))
+                     for c in answer_cands]
+        else:
+            # rank all cands to increase accuracy
+            answer_cands = [list(set(c)) for c in answer_cands]
 
         self.model.train(mode=is_training)
 
@@ -262,40 +258,24 @@ class MemnnCombAgent(Agent):
             self.backward(loss)
             return predictions
 
-        scores = None
-        if is_training:
-            label_inds = [cand_list.index(self.labels[i]) for i, cand_list in enumerate(answer_cands)]
+        output_embeddings = self.model(*inputs)
 
-            if 'FP' in self.model_setting:
-                if len(feedback_cands) == 0:
-                    print ('FP is not training... waiting for negative feedback examples')
-                else:
-                    cand_answers_embs_with_beta = self.get_cand_embeddings_with_added_beta(answer_cands, label_inds)
-                    scores, forward_prediction_output = self.model(*inputs, answer_cands, cand_answers_embs_with_beta)
-                    fp_scores = self.model.get_score(feedback_cands, forward_prediction_output, forward_predict=True)
-                    feedback_label_inds = [cand_list.index(self.feedback_labels[i]) for i, cand_list in enumerate(feedback_cands)]
-                    if self.opt['cuda']:
-                        feedback_label_inds = Variable(torch.cuda.LongTensor(feedback_label_inds))
-                    else:
-                        feedback_label_inds = Variable(torch.LongTensor(feedback_label_inds))
-                    loss_fp = self.loss_fn(fp_scores, feedback_label_inds)
-                    if loss_fp.data[0] > 100000:
-                        raise Exception("Loss might be diverging. Loss:", loss_fp.data[0])
-                    self.backward(loss_fp, retain_graph = True)
+        if is_training and len(self.rewarded_examples_inds) > 0:
+            answer_cands = [list(set(random.sample(answer_cands[i], min(100, len(answer_cands[i]))) + [self.labels[i]]))
+                         if i in self.rewarded_examples_inds else answer_cands[i] for i in range(len(answer_cands))]
+
+        scores = self.model.get_score(answer_cands, output_embeddings)
+        predictions = self.ranked_predictions(answer_cands, scores)
+
+        if is_training:
+            update_params = True
+            label_inds = [cand_list.index(self.labels[i]) for i, cand_list in enumerate(answer_cands)]
 
             if self.opt['cuda']:
                 label_inds = Variable(torch.cuda.LongTensor(label_inds))
             else:
                 label_inds = Variable(torch.LongTensor(label_inds))
-        
-        if scores is None:
-            output_embeddings = self.model(*inputs)
-            scores = self.model.get_score(answer_cands, output_embeddings)
 
-        predictions = self.ranked_predictions(answer_cands, scores)
-
-        if is_training:
-            update_params = True
             # don't perform regular training if in FP mode
             if self.model_setting == 'FP':
                 update_params = False
@@ -314,6 +294,46 @@ class MemnnCombAgent(Agent):
 
             if update_params:
                 self.backward(loss)
+
+            if 'FP' in self.model_setting:
+                if len(feedback_cands) == 0:
+                    print ('FP is not training... waiting for negative feedback examples')
+                else:
+                    # run RBI model to get a subset of answer candidates
+                    for index in range(len(predictions)):
+                        subset_size = 10
+                        feedback_label = self.feedback_labels[index]
+                        if 'no' in feedback_label:
+                            feedback_label = feedback_label[22:]
+                            rbi_selected_cands = []
+                            
+                            while feedback_label not in rbi_selected_cands:
+                                rbi_selected_cands = list(set([self.labels[index]] + predictions[index][:subset_size]))
+                                subset_size += 10
+                            answer_cands[index] = rbi_selected_cands
+                        else:
+                            answer_cands[index] = list(set([self.labels[index]] + predictions[index][:10]))
+                        print ('subset_size:', subset_size)
+                            
+                    print ([len(ans) for ans in answer_cands])
+
+                    # import pdb; pdb.set_trace()
+                    # subset_answer_cands = [list(set([self.labels[i]] + predictions[i][:10])) for i in range(len(predictions))]
+                    label_inds = [cand_list.index(self.labels[i]) for i, cand_list in enumerate(answer_cands)]
+
+                    cand_answers_embs_with_beta = self.get_cand_embeddings_with_added_beta(answer_cands, label_inds)
+                    _, forward_prediction_output = self.model(*inputs, answer_cands, cand_answers_embs_with_beta)
+                    fp_scores = self.model.get_score(feedback_cands, forward_prediction_output, forward_predict=True)
+                    feedback_label_inds = [cand_list.index(self.feedback_labels[i]) for i, cand_list in enumerate(feedback_cands)]
+                    if self.opt['cuda']:
+                        feedback_label_inds = Variable(torch.cuda.LongTensor(feedback_label_inds))
+                    else:
+                        feedback_label_inds = Variable(torch.LongTensor(feedback_label_inds))
+                    loss_fp = self.loss_fn(fp_scores, feedback_label_inds)
+                    if loss_fp.data[0] > 100000:
+                        raise Exception("Loss might be diverging. Loss:", loss_fp.data[0])
+                    self.backward(loss_fp) #, retain_graph = True)
+
         return predictions
 
     def ranked_predictions(self, cands, scores):
@@ -397,9 +417,6 @@ class MemnnCombAgent(Agent):
             cands = list of candidates for each example in batch
             valid_inds = list of indices for examples with valid observations
         """
-        # print (obs)
-        # print (len(obs[0]['label_candidates']))
-        # import pdb; pdb.set_trace()
         exs = [ex for ex in obs if 'text' in ex]
         valid_inds = [i for i, ex in enumerate(obs) if 'text' in ex]
         if not exs:
@@ -420,7 +437,6 @@ class MemnnCombAgent(Agent):
 
         ys = None
         self.labels = [random.choice(ex['labels']) for ex in exs if 'labels' in ex]
-        self.eval_labels = [random.choice(ex['eval_labels']) for ex in exs if 'eval_labels' in ex]
         
         if len(self.labels) == len(exs):
             parsed = [self.dict.txt2vec(l) for l in self.labels]
