@@ -263,19 +263,26 @@ class MemnnCombAgent(Agent):
         #     answer_cands[i] = answer_cands[i] #+ random.sample(all_cands, 20)
         #     shuffle(answer_cands[i]);
 
+        true_label_present = []
         if is_training:
             for i in range(len(answer_cands)):
                 true_labels = [self.feedback_labels[i][22:] if 'no' in self.feedback_labels[i] else self.labels[i] for i in range(len(self.labels))]
                 # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i] + [true_labels[i], self.labels[i]]))
-                # answer_cands[i] = list(set(random.sample(all_cands, 20) + answer_cands[i][:10] + [self.labels[i]]))
+                # answer_cands[i] = list(set(answer_cands[i] + [true_labels[i]]))
                 # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i][:10] + [self.labels[i], true_labels[i]]))
-                answer_cands[i] = list(set(answer_cands[i][:10] + [self.labels[i]] + random.sample(all_cands, 20)))
-                # answer_cands[i] = [self.labels[i]] + answer_cands[i][:10]
+                # answer_cands[i] = list(set(random.sample(all_cands, 20) + answer_cands[i] + [self.labels[i], true_labels[i]]))
+                # answer_cands[i] = list(set(random.sample(all_cands, 10) + [true_labels[i], self.labels[i]] + answer_cands[i][:10]))
+                answer_cands[i] = answer_cands[i][:10] + random.sample(all_cands, 20) + [self.labels[i]]
                 shuffle(answer_cands[i]);
+                
+                true_label_present = [i for i in range(len(answer_cands)) if true_labels[i] in answer_cands[i]]
+                true_label_present = torch.LongTensor(true_label_present)
+                if self.opt['cuda']:
+                    true_label_present = true_label_present.cuda()
         else:
             for i in range(len(answer_cands)):
                 # answer_cands[i] = answer_cands[i][:10] + [self.eval_labels[i]]
-                answer_cands[i] = list(set(answer_cands[i][:-1]))
+                answer_cands[i] = answer_cands[i][:10] + random.sample(all_cands, 20) + [self.eval_labels[i]]
                 # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i][:10]))
                 shuffle(answer_cands[i])
         
@@ -310,16 +317,21 @@ class MemnnCombAgent(Agent):
                     else:
                         feedback_label_inds = Variable(torch.LongTensor(feedback_label_inds))
                     
-                    loss_fp = self.loss_fn(fp_scores, feedback_label_inds)
-                
-                    if loss_fp.data[0] > 1000:
-                        raise Exception("Loss might be diverging. Loss:", loss_fp.data[0])
-                
-                    if 'RBI' in self.model_setting:
-                        self.backward(loss_fp, retain_graph = True)
-                    else:
-                        self.backward(loss_fp, retain_graph = False)
+                    # loss_fp = self.loss_fn(fp_scores, feedback_label_inds)
                     
+                    if len(true_label_present) > 0:
+                        # for training use only examples where cands set contains the true label
+                        loss_fp = self.loss_fn(fp_scores[true_label_present,:], feedback_label_inds[true_label_present])
+
+                        if loss_fp.data[0] > 1000:
+                            raise Exception("Loss might be diverging. Loss:", loss_fp.data[0])
+                    
+                        if 'RBI' in self.model_setting:
+                            self.backward(loss_fp, retain_graph = True)
+                        else:
+                            self.backward(loss_fp, retain_graph = False)
+                    else:
+                        print ('NOT training')
 
             if self.opt['cuda']:
                 label_inds = Variable(torch.cuda.LongTensor(label_inds))
@@ -505,9 +517,9 @@ class MemnnCombAgent(Agent):
         for i in range(len(valid_inds)):
             batch_reply[valid_inds[i]]['text'] = predictions[i][0]
             batch_reply[valid_inds[i]]['text_candidates'] = predictions[i]
-            # path = '/Users/eve/ParlAI/data/dialog-bAbI-feedback/dialog-bAbI-feedback-tasks/RBI+FP/'
-            # with open(path + "Cands_vld.txt", "a") as myfile:
-            #     label = observations[0]['eval_labels'][0]
+            # path = '/Users/eve/ParlAI/data/dialog-bAbI-feedback/dialog-bAbI-feedback-tasks/RBI/'
+            # with open(path + "Cands_trn.txt", "a") as myfile:
+            #     label = observations[0]['labels'][0]
             #     myfile.write('|'.join(predictions[i][:100]) + '|' + label + '\n')
         return batch_reply
 
