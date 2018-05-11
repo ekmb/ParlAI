@@ -197,7 +197,7 @@ class TrainLoop():
         opt = self.opt
         world = self.world
         # run_eval(self.agent, opt, 'test', write_log=True)
-        self.validate()
+        # self.validate()
         # _rep, wrld = run_eval(self.agent, opt, 'test_all_cands', write_log=True)
         # wrld.shutdown()  # may need to shut down threads, remote connections
         

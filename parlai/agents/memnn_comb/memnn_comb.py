@@ -236,18 +236,18 @@ class MemnnCombAgent(Agent):
 
     def predict(self, xs, answer_cands, ys=None, feedback_cands=None):
         is_training = ys is not None
-        # if is_training:
-        #     if 'FP' in self.model_setting:
-        #     # Subsample to reduce training time
-        #         true_labels = [self.feedback_labels[i][22:] if 'no' in self.feedback_labels[i] else self.labels[i] for i in range(len(self.labels))]
-        #         answer_cands = [list(set(random.sample(answer_cands[i], min(20, len(answer_cands[i]))) + [true_labels[i], self.labels[i]]))
-        #              for i in range(len(answer_cands))]
-        #     elif self.model_setting == 'RBI':
-        #         answer_cands = [list(set(random.sample(answer_cands[i], min(100, len(answer_cands[i]))) + [self.labels[i]]))
-        #              for i in range(len(answer_cands))]
-        # elif not is_training and 'RBI' not in self.model_setting:
-        #     answer_cands = [list(set(random.sample(answer_cands[i], min(20, len(answer_cands[i]))) + [self.eval_labels[i]]))
-        #              for i in range(len(answer_cands))]
+        if is_training:
+            if 'FP' in self.model_setting:
+            # Subsample to reduce training time
+                true_labels = [self.feedback_labels[i][22:] if 'no' in self.feedback_labels[i] else self.labels[i] for i in range(len(self.labels))]
+                answer_cands = [list(set(random.sample(answer_cands[i], min(20, len(answer_cands[i]))) + [true_labels[i], self.labels[i]]))
+                     for i in range(len(answer_cands))]
+            elif self.model_setting == 'RBI':
+                answer_cands = [list(set(random.sample(answer_cands[i], min(100, len(answer_cands[i]))) + [self.labels[i]]))
+                     for i in range(len(answer_cands))]
+        elif not is_training and 'RBI' not in self.model_setting:
+            answer_cands = [list(set(random.sample(answer_cands[i], min(20, len(answer_cands[i]))) + [self.eval_labels[i]]))
+                     for i in range(len(answer_cands))]
         
         # print ([len(c) for c in answer_cands])
         from random import shuffle
@@ -263,21 +263,21 @@ class MemnnCombAgent(Agent):
         #     answer_cands[i] = answer_cands[i] #+ random.sample(all_cands, 20)
         #     shuffle(answer_cands[i]);
 
-        if is_training:
-            for i in range(len(answer_cands)):
-                true_labels = [self.feedback_labels[i][22:] if 'no' in self.feedback_labels[i] else self.labels[i] for i in range(len(self.labels))]
-                # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i] + [true_labels[i], self.labels[i]]))
-                # answer_cands[i] = list(set(random.sample(all_cands, 20) + answer_cands[i][:10] + [self.labels[i]]))
-                # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i][:10] + [self.labels[i], true_labels[i]]))
-                answer_cands[i] = list(set(answer_cands[i][:10] + [self.labels[i]] + random.sample(all_cands, 20)))
-                # answer_cands[i] = [self.labels[i]] + answer_cands[i][:10]
-                shuffle(answer_cands[i]);
-        else:
-            for i in range(len(answer_cands)):
-                # answer_cands[i] = answer_cands[i][:10] + [self.eval_labels[i]]
-                answer_cands[i] = list(set(answer_cands[i][:-1]))
-                # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i][:10]))
-                shuffle(answer_cands[i])
+        # if is_training:
+        #     for i in range(len(answer_cands)):
+        #         true_labels = [self.feedback_labels[i][22:] if 'no' in self.feedback_labels[i] else self.labels[i] for i in range(len(self.labels))]
+        #         # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i] + [true_labels[i], self.labels[i]]))
+        #         # answer_cands[i] = list(set(random.sample(all_cands, 20) + answer_cands[i][:10] + [self.labels[i]]))
+        #         # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i][:10] + [self.labels[i], true_labels[i]]))
+        #         answer_cands[i] = list(set(answer_cands[i][:10] + [self.labels[i]] + random.sample(all_cands, 100)))
+        #         # answer_cands[i] = [self.labels[i]] + answer_cands[i][:10]
+        #         shuffle(answer_cands[i]);
+        # else:
+        #     for i in range(len(answer_cands)):
+        #         # answer_cands[i] = answer_cands[i][:10] + [self.eval_labels[i]]
+        #         answer_cands[i] = list(set(answer_cands[i][:10]))
+        #         # answer_cands[i] = list(set(random.sample(all_cands, 10) + answer_cands[i][:10]))
+        #         shuffle(answer_cands[i])
         
         # print ([len(c) for c in answer_cands])
         self.model.train(mode=is_training)

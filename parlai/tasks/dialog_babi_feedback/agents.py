@@ -44,15 +44,8 @@ def _path(task, opt):
     datafile = os.path.join(prefix,
             '{task}_{type}.txt'.format(task=task_name, type=suffix))
 
-    if dt == 'test_all_cands':
-        print ('test_all_cands')
-        suffix = 'tst'
-        datafile = os.path.join(prefix,
-            '{task}_{type}.txt'.format(task=task_name, type=suffix))
-        cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
-        return datafile, cands_datafile
-    
-    return datafile, None 
+    cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
+    return datafile, cands_datafile
 
 # The knowledge base of facts that can be used to answer questions.
 class KBTeacher(FbDialogTeacher):
