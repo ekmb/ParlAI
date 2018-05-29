@@ -146,6 +146,11 @@ class Seq2seqAgent(Agent):
                                 'softmax (see arxiv.org/abs/1711.03953).')
         agent.add_argument('-rf', '--report-freq', type=float, default=0.001,
                            help='Report frequency of prediction during eval.')
+        agent.add_argument('-histr', '--history-replies',
+                           default='label_else_model', type=str,
+                           choices=['none', 'model', 'label',
+                                    'label_else_model'],
+                           help='Keep replies in the history, or not.')
         Seq2seqAgent.dictionary_class().add_cmdline_args(argparser)
         return agent
 
@@ -399,6 +404,8 @@ class Seq2seqAgent(Agent):
         """Reset observation and episode_done."""
         self.observation = None
         self.history.clear()
+        for i in range(len(self.answers)):
+            self.answers[i] = None
         self.reset_metrics()
 
     def reset_metrics(self):
@@ -439,12 +446,12 @@ class Seq2seqAgent(Agent):
                 # move metrics and model to shared memory
                 self.metrics = SharedTable(self.metrics)
                 self.model.share_memory()
-            shared['metrics'] = self.metrics
-            shared['model'] = self.model
-            shared['states'] = {  # only need to pass optimizer states
-                'optimizer': self.optimizer.state_dict(),
-                'optimizer_type': self.opt['optimizer'],
-            }
+        shared['metrics'] = self.metrics
+        shared['model'] = self.model
+        shared['states'] = {  # only need to pass optimizer states
+            'optimizer': self.optimizer.state_dict(),
+            'optimizer_type': self.opt['optimizer'],
+        }
         return shared
 
     def observe(self, observation):
@@ -459,7 +466,7 @@ class Seq2seqAgent(Agent):
                 self.history, obs,
                 reply=self.answers[batch_idx],
                 historyLength=self.truncate,
-                useReplies=self.opt['include_labels'],
+                useReplies=self.opt.get('history_replies'),
                 dict=self.dict,
                 useStartEndIndices=False)
         else:
