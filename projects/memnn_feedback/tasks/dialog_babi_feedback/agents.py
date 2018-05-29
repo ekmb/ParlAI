@@ -3,59 +3,66 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
-#
+# 
 # Accessing the tasks can be done with something like:
 #
-#   python examples/display_data.py -t "projects.memnn_feedback.tasks.dbll_babi.agents:taskTeacher:3_p0.5:feedback"
+#   python examples/train_model.py --setting 'RBI' -m "projects.memnn_feedback.agent.memnn_feedback:MemnnFeedbackAgent" 
+# -t "projects.memnn_feedback.tasks.dialog_babi_feedback.agents:taskTeacher:1_p0.5:feedback"
 #
-# which specifies task 2, and policy with 0.5 answers correct, see the paper
-# for more details: https://arxiv.org/abs/1604.06045
+# which specifies task 1, and policy with 0.5 answers correct with reward-based learning, see the papers 
+# for more details: https://arxiv.org/abs/1604.06045 and https://arxiv.org/abs/1605.07683
 
 from parlai.core.teachers import FbDialogTeacher
+from parlai.core.agents import MultiTaskTeacher
 from .build import build
 
 import copy
 import os
 
 tasks = {}
-tasks[1] = 'rl1_pure_imitation'
-tasks[2] = 'rl2_pos_neg'
-tasks[3] = 'rl3_with_ans'
-tasks[4] = 'rl4_with_hints'
-tasks[5] = 'rl5_told_sf'
-tasks[6] = 'rl6_only_some_rewards'
-tasks[7] = 'rl7_no_feedback'
-tasks[8] = 'rl8_imitation_plus_rl'
-tasks[9] = 'rl9_ask_for_answer'
-tasks[10] = 'rl10_ask_for_sf'
+tasks[1] = 'rl1_API_calls_with_ans'
+tasks[2] = 'rl2_API_refine_with_ans'
+tasks[3] = 'rl3_options_with_ans'
+tasks[4] = 'rl4_phone_address_with_ans'
+tasks[5] = 'rl5_full_dialogs_with_ans'
 
-_suffixes = {
-    'train': 'train',
-    'test': 'test',
-    'valid': 'dev'
-}
-
-
-def _path(subdir, task, opt, dt=''):
+def _path(task, opt):
+    # Build the data if it doesn't exist.
     build(opt)
-    if dt == '':
-        dt = opt['datatype'].split(':')[0]
     task_name = '%s_%s' % (task.split('_')[1],
                            tasks[int(task.split('_')[0])])
-    return os.path.join(opt['datapath'], 'DBLL', 'dbll',
-                        '{subdir}_{task}_{suffix}.txt'.format(
-                            subdir=subdir, task=task_name,
-                            suffix=_suffixes[dt]))
+    task = task.split('_')[0]
+    task_name = 'dialog-babi_' + task_name
+    prefix = os.path.join(opt['datapath'], 'dialog-bAbI-feedback', 'dialog-bAbI-feedback')
+    suffix = ''
+    dt = opt['datatype'].split(':')[0]
+    if dt == 'train':
+        suffix = 'trn'
+    elif dt == 'test':
+        suffix = 'tst'
+    elif dt == 'valid':
+        suffix = 'dev'
+    datafile = os.path.join(prefix,
+            '{task}_{type}.txt'.format(task=task_name, type=suffix))
+
+    cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
+    return datafile, cands_datafile
+
+# The knowledge base of facts that can be used to answer questions.
+class KBTeacher(FbDialogTeacher):
+    def __init__(self, opt, shared=None):
+        build(opt)
+        opt['datafile'] = os.path.join(opt['datapath'], 'dialog-bAbI-feedback',
+                                       'dialog-bAbI-feedback-tasks',
+                                       'dialog-babi-kb-all.txt')
+        super().__init__(opt, shared)
 
 
+# Single task.
 class TaskTeacher(FbDialogTeacher):
     def __init__(self, opt, shared=None):
-        params = opt['task'].split(':')[2]
-        opt = copy.deepcopy(opt)
-        opt['datafile'] = _path(os.path.join('babi', 'babi1'), params, opt)
-        opt['cands_datafile'] = _path(os.path.join('babi', 'babi1'), params,
-                                      opt, 'train')
-        self.opt = opt
+        paths = _path(opt['task'].split(':')[2], opt)
+        opt['datafile'], opt['cands_datafile'] = paths
         super().__init__(opt, shared)
 
     def setup_data(self, path):
@@ -173,13 +180,3 @@ class TaskTeacher(FbDialogTeacher):
                     reward = 0
                     y = None
                     read_feedback = False
-
-# Defaults to task 2 with p=0.5.
-class DefaultTeacher(FbDialogTeacher):
-    def __init__(self, opt, shared=None):
-        task = '2_p0.5'
-        opt = copy.deepcopy(opt)
-        opt['datafile'] = _path(os.path.join('babi', 'babi1'), task, opt)
-        opt['cands_datafile'] = _path(os.path.join('babi', 'babi1'), task,
-                                      opt, 'train')
-        super().__init__(opt, shared)

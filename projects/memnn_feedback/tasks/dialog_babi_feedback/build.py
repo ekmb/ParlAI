@@ -9,9 +9,9 @@ import parlai.core.build_data as build_data
 import os
 
 def build(opt):
-    dpath = os.path.join(opt['datapath'], 'DBLL')
+    dpath = os.path.join(opt['datapath'], 'dialog-babi-feedback')
     version = None
-
+    
     if not build_data.built(dpath, version_string=version):
         print('[building data: ' + dpath + ']')
         if build_data.built(dpath):
@@ -20,8 +20,9 @@ def build(opt):
         build_data.make_dir(dpath)
 
         # Download the data.
-        fname = 'dbll.tgz'
-        url = 'https://s3.amazonaws.com/fair-data/parlai/dbll/' + fname
+        fname = 'dialog-babi-feedback.zip'
+        url = ' https://s3.amazonaws.com/fair-data/parlai/dialog-babi-feedback/' + fname
+
         build_data.download(url, dpath, fname)
         build_data.untar(dpath, fname)
 
